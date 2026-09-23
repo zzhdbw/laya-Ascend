@@ -74,7 +74,7 @@ source .venv/bin/activate
 
 ```bash
 # 文本依赖和项目本身
-uv pip install torch-npu==2.8.0
+uv pip install torch-npu==2.8.0.post4
 uv pip install -e .
 uv pip install modelscope
 ```
