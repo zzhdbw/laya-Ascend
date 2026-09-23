@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laya 俄罗斯方块</title>
+<style>
+:root {
+  --page: #f7f7f4;
+  --surface: #fff;
+  --ink: #161615;
+  --muted: #77746d;
+  --grid: #e4e3dc;
+  --border: rgba(22,22,21,.12);
+  --blue: #2a78d6;
+  --blue-soft: rgba(42,120,214,.14);
+  --orange: #e86a32;
+  --good: #0b8a4b;
+  --critical: #cf3d3d;
+  --board: #efeee9;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+}
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--grid);
+}
+header h1 { margin: 0; font-size: 19px; letter-spacing: -.01em; }
+#engine { margin-left: auto; color: var(--muted); font-size: 13px; }
+#engine b { color: var(--ink); font-weight: 600; }
+main {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 28px;
+  align-items: start;
+}
+.board-wrap { position: relative; width: 100%; max-width: 340px; margin: 0 auto; }
+canvas { width: 100%; display: block; border: 1px solid var(--border); border-radius: 8px; background: var(--board); }
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center;
+  align-items: center; gap: 8px; text-align: center; padding: 22px; color: #fff;
+  background: rgba(18,18,18,.56); border-radius: 8px;
+}
+.overlay small { color: rgba(255,255,255,.82); }
+.overlay[hidden] { display: none; }
+.rail { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 16px; }
+.controls { display: flex; flex-direction: column; gap: 10px; }
+.controls label { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 13px; }
+button {
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+  border-radius: 6px; padding: 7px 12px; font: inherit; cursor: pointer;
+}
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); font-weight: 600; }
+#cands { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; }
+.cand { display: grid; grid-template-columns: 1fr 100px 48px; align-items: center; gap: 8px; font-size: 13px; }
+.cand .desc { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cand .track { height: 8px; background: var(--grid); border-radius: 99px; overflow: hidden; }
+.cand .fill { display: block; height: 100%; width: 0; background: var(--orange); transition: width .12s ease; }
+.cand.chosen .desc { font-weight: 700; color: var(--blue); }
+.cand .val { text-align: right; color: var(--muted); }
+.note { margin-top: 12px; min-height: 42px; color: var(--muted); font-size: 13px; }
+.note .flag { color: var(--critical); font-weight: 700; }
+.stats { margin-top: 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { border: 1px solid var(--border); border-radius: 6px; padding: 8px; min-height: 58px; }
+.stat .label { color: var(--muted); font-size: 12px; }
+.stat .value { margin-top: 2px; font-size: 17px; font-weight: 650; }
+.error { margin-top: 12px; color: var(--critical); font-size: 13px; white-space: pre-wrap; }
+@media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Laya 俄罗斯方块</h1>
+  <span id="engine">正在连接服务端…</span>
+</header>
+<main>
+  <div class="board-wrap">
+    <canvas id="board" width="300" height="600"></canvas>
+    <div class="overlay" id="overlay">
+      <b id="overlay-title">每一块都由 Laya 评分落点</b>
+      <small id="overlay-sub">点击「新开一局」开始。模型会为 4 个候选落点评 P(好落点)。</small>
+    </div>
+  </div>
+  <aside class="rail">
+    <div class="controls">
+      <button class="primary" id="new">新开一局</button>
+      <button id="toggle" disabled>暂停</button>
+      <label>速度 <input id="speed" type="range" min="1" max="11" value="4"></label>
+      <label><input id="guarded" type="checkbox" checked> 安全护栏（避免接近顶部）</label>
+    </div>
+    <div id="cands"></div>
+    <div class="note" id="note">模型会逐个判断「这是一个好的落点吗？」并选择 P(好落点) 最高的候选。</div>
+    <div class="stats">
+      <div class="stat"><div class="label">得分</div><div class="value" id="s-score">0</div></div>
+      <div class="stat"><div class="label">消除行</div><div class="value" id="s-lines">0</div></div>
+      <div class="stat"><div class="label">方块数</div><div class="value" id="s-pieces">0</div></div>
+      <div class="stat"><div class="label">护栏干预</div><div class="value" id="s-int">0</div></div>
+      <div class="stat"><div class="label">单块推理</div><div class="value" id="s-inf">–</div></div>
+      <div class="stat"><div class="label">实际速度</div><div class="value" id="s-pps">–</div></div>
+    </div>
+    <div class="error" id="error" hidden></div>
+  </aside>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const state = { session: null, playing: false, gen: 0, lastTick: 0 };
+const COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7", "#e34948"];
+
+function pct(v) { return (v * 100).toFixed(1) + "%"; }
+function showError(msg) { const el = $("error"); el.textContent = msg; el.hidden = false; }
+function hideError() { $("error").hidden = true; }
+
+async function api(path, body) {
+  const opts = body === undefined
+    ? { method: "GET" }
+    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const res = await fetch(path, opts);
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+  return data;
+}
+
+function candText(c) {
+  const lines = c.lines ? `消${c.lines}行` : "不消行";
+  const holes = c.holes ? `埋${c.holes}洞` : "无洞";
+  const height = c.height > 15 ? "近顶" : c.height > 10 ? "变高" : "低位";
+  return `${lines} · ${holes} · ${height}`;
+}
+
+function updatePanel(decision) {
+  const box = $("cands");
+  box.innerHTML = "";
+  if (!decision) {
+    $("note").textContent = "模型会逐个判断「这是一个好的落点吗？」并选择 P(好落点) 最高的候选。";
+    return;
+  }
+  decision.candidates.forEach((c, i) => {
+    const row = document.createElement("div");
+    row.className = "cand" + (i === decision.executed ? " chosen" : "");
+    row.innerHTML = `<span class="desc" title="${c.statement}">${i === decision.executed ? "✓ " : ""}${candText(c)}</span>
+      <span class="track"><span class="fill" style="width:${(c.p_good * 100).toFixed(1)}%"></span></span>
+      <span class="val">${pct(c.p_good)}</span>`;
+    box.appendChild(row);
+  });
+  if (decision.intervened) {
+    $("note").innerHTML = `<span class="flag">护栏干预</span>：模型首选候选 ${decision.proposed}（堆叠过高），改用候选 ${decision.executed}`;
+  } else {
+    $("note").textContent = `模型选择候选 ${decision.executed}，P(好落点)=${pct(decision.candidates[decision.executed].p_good)}`;
+  }
+}
+
+function drawBoard(snap) {
+  const canvas = $("board");
+  const ctx = canvas.getContext("2d");
+  const cw = canvas.width / snap.width;
+  const ch = canvas.height / snap.height;
+  ctx.fillStyle = "#efeee9";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = "#e4e3dc";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = 1; x < snap.width; x++) { ctx.moveTo(x * cw, 0); ctx.lineTo(x * cw, canvas.height); }
+  for (let y = 1; y < snap.height; y++) { ctx.moveTo(0, y * ch); ctx.lineTo(canvas.width, y * ch); }
+  ctx.stroke();
+  for (let y = 0; y < snap.height; y++) {
+    for (let x = 0; x < snap.width; x++) {
+      const v = snap.board[y][x];
+      if (!v) continue;
+      ctx.fillStyle = COLORS[(v - 1) % COLORS.length];
+      ctx.beginPath();
+      ctx.roundRect(x * cw + 1, y * ch + 1, cw - 2, ch - 2, 3);
+      ctx.fill();
+    }
+  }
+}
+
+function drawDropFrame(snap, cells, shift) {
+  drawBoard(snap);
+  const canvas = $("board");
+  const ctx = canvas.getContext("2d");
+  const cw = canvas.width / snap.width;
+  const ch = canvas.height / snap.height;
+
+  // Destination outline.
+  ctx.save();
+  ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = "rgba(42,120,214,.55)";
+  ctx.lineWidth = 1.5;
+  for (const [x, y] of cells) {
+    if (y < 0 || y >= snap.height) continue;
+    ctx.strokeRect(x * cw + 1.5, y * ch + 1.5, cw - 3, ch - 3);
+  }
+  ctx.restore();
+
+  // Falling piece.
+  ctx.fillStyle = "#2a78d6";
+  for (const [x, y] of cells) {
+    const py = y - shift;
+    if (py < -1 || py >= snap.height) continue;
+    ctx.beginPath();
+    ctx.roundRect(x * cw + 1, py * ch + 1, cw - 2, ch - 2, 3);
+    ctx.fill();
+  }
+}
+
+function animateDrop(before, decision, budgetMs) {
+  const cand = decision && decision.candidates && decision.candidates[decision.executed];
+  if (!cand || !cand.cells || !cand.cells.length || !before || !before.board) {
+    return Promise.resolve();
+  }
+  const cells = cand.cells;
+  const minY = Math.min(...cells.map((c) => c[1]));
+  const startShift = minY + 4;
+  const duration = Math.max(220, Math.min(700, budgetMs || 420));
+  const started = performance.now();
+  return new Promise((resolve) => {
+    const frame = (now) => {
+      const p = Math.min(1, (now - started) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      drawDropFrame(before, cells, startShift * (1 - eased));
+      if (p < 1) requestAnimationFrame(frame);
+      else resolve();
+    };
+    requestAnimationFrame(frame);
+  });
+}
+
+function updateStats(snap, stats, decision) {
+  $("s-score").textContent = snap.score;
+  $("s-lines").textContent = snap.lines;
+  $("s-pieces").textContent = snap.pieces;
+  $("s-int").textContent = stats ? stats.interventions : 0;
+  if (decision) $("s-inf").textContent = decision.inference_ms.toFixed(0) + " ms";
+  if (state.lastTick) {
+    const dt = (performance.now() - state.lastTick) / 1000;
+    if (dt > 0) $("s-pps").textContent = (1 / dt).toFixed(2) + " 块/s";
+  }
+}
+
+async function newGame() {
+  hideError();
+  $("new").disabled = true;
+  $("new").textContent = "加载中…";
+  try {
+    const data = await api("/api/tetris/new", { guarded: $("guarded").checked });
+    state.session = data.session;
+    state.playing = true;
+    state.gen += 1;
+    state.lastTick = 0;
+    $("overlay").hidden = true;
+    $("toggle").disabled = false;
+    $("toggle").textContent = "暂停";
+    updatePanel(null);
+    drawBoard(data.state);
+    updateStats(data.state, null, null);
+    loop(state.gen);
+  } catch (err) {
+    showError(err.message);
+    $("overlay").hidden = false;
+  } finally {
+    $("new").disabled = false;
+    $("new").textContent = "新开一局";
+  }
+}
+
+async function loop(gen) {
+  const s = state;
+  if (!s.session || s.gen !== gen || !s.playing) return;
+  const speed = Number($("speed").value);
+  const target = speed >= 11 ? 0 : 1000 / speed;
+  const started = performance.now();
+  let data;
+  try {
+    data = await api("/api/tetris/step", { session: s.session });
+  } catch (err) {
+    showError(err.message);
+    s.playing = false;
+    $("toggle").disabled = true;
+    return;
+  }
+  if (s.gen !== gen) return;
+  if (data.decision) updatePanel(data.decision);
+  if (data.decision && data.before) {
+    const animBudget = target > 0 ? target * 0.55 : 420;
+    await animateDrop(data.before, data.decision, animBudget);
+    if (s.gen !== gen) return;
+  }
+  drawBoard(data.state);
+  updateStats(data.state, data.stats, data.decision);
+  s.lastTick = started;
+  if (data.done) {
+    s.playing = false;
+    $("toggle").disabled = true;
+    $("overlay-title").textContent = "本局结束：堆到顶了";
+    $("overlay-sub").textContent = `得分 ${data.state.score}，消除 ${data.state.lines} 行，共 ${data.state.pieces} 块。`;
+    $("overlay").hidden = false;
+    return;
+  }
+  const elapsed = performance.now() - started;
+  setTimeout(() => loop(gen), Math.max(0, target - elapsed));
+}
+
+function toggle() {
+  if (!state.session) return;
+  state.playing = !state.playing;
+  $("toggle").textContent = state.playing ? "暂停" : "继续";
+  if (state.playing) loop(state.gen);
+}
+
+$("new").onclick = newGame;
+$("toggle").onclick = toggle;
+
+api("/api/info").then((info) => {
+  $("engine").innerHTML = `模型 <b>${info.model}</b> · 设备 <b>${info.device}</b>`;
+}).catch((err) => {
+  $("engine").textContent = "服务端未就绪：" + err.message;
+});
+</script>
+</body>
+</html>

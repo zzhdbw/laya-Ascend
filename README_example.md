@@ -1,6 +1,6 @@
 # Laya Examples
 
-这个文档介绍仓库中的可运行示例。目前包含一个由 Laya 实时决策的贪吃蛇示例，支持 CPU 和 Ascend NPU。
+这个文档介绍仓库中的可运行示例。目前包含两个由 Laya 实时决策的游戏示例：贪吃蛇和俄罗斯方块，均支持 CPU 和 Ascend NPU。
 
 ![Laya Snake](examples/snake/example.png)
 
@@ -103,6 +103,42 @@ POST /api/snake/step   {"session": "..."}
 
 完整示例说明见 [`examples/snake/README.md`](examples/snake/README.md)。
 
+## Tetris：对候选落点逐个评分
+
+![Laya Tetris](examples/tetris/example.png)
+
+俄罗斯方块示例位于 [`examples/tetris/`](examples/tetris/)：
+
+- 游戏枚举当前方块的合法落点，用启发式筛出 4 个候选
+- 对每个候选生成一句中文陈述，并用 Laya 的 `noul` 问题判断 `P(好落点)`
+- 选择概率最高的候选，安全护栏会避免接近顶部的危险落点
+- 提供终端和 Canvas 网页可视化，网页会播放方块下落动画
+
+网页运行：
+
+```bash
+# CPU
+.venv/bin/python examples/tetris/server.py --device cpu --port 8011
+
+# Ascend NPU
+.venv/bin/python examples/tetris/server.py --device npu:0 --port 8011
+```
+
+浏览器打开：
+
+```text
+http://127.0.0.1:8011
+```
+
+终端运行：
+
+```bash
+.venv/bin/python examples/tetris/play.py --device cpu --pieces 10
+.venv/bin/python examples/tetris/play.py --device npu:0 --pieces 20
+```
+
+完整说明见 [`examples/tetris/README.md`](examples/tetris/README.md)。
+
 ## 参考
 
-贪吃蛇示例参考自 [AXERA-TECH/laya-axera](https://github.com/AXERA-TECH/laya-axera)。
+贪吃蛇和俄罗斯方块示例参考自 [AXERA-TECH/laya-axera](https://github.com/AXERA-TECH/laya-axera)。

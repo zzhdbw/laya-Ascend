@@ -52,7 +52,7 @@ Python 3.10 or newer. The dependencies set that floor: `huggingface_hub` 1.x, `t
 
 ## Examples
 
-Runnable examples are in [`examples/`](examples/). The first example is a [Laya-driven Snake game](README_example.md) with terminal playback and a web Canvas UI; it runs on CPU or Ascend NPU.
+Runnable examples are in [`examples/`](examples/). See [README_example.md](README_example.md) for the Laya-driven [Snake](examples/snake/) and [Tetris](examples/tetris/) games, with terminal playback and web Canvas UIs on CPU or Ascend NPU.
 
 ---
 
