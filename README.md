@@ -7,6 +7,10 @@
 
 **Multilingual, non-autoregressive System 1 decision engine.** Typed decisions over 100+ languages in a single forward pass — 33 ms — trained with reinforcement learning against strictly proper scoring rules (RLCD), with a router that picks the right checkpoint per request.
 
+Laya is a multilingual, non-autoregressive System 1 decision engine for typed decisions over text, with CPU and Ascend NPU inference support.
+
+> Ascend NPU users: see [README-Ascend.md](README-Ascend.md) for environment setup, Python package installation, model download, and CPU/NPU inference instructions.
+
 <div align="center">
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/15d4Yv__KHeHjshVb-6PRTfqVllxih2S3?usp=sharing)
