@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laya 贪吃蛇</title>
+<style>
+:root {
+  --page: #f7f7f4;
+  --surface: #fff;
+  --ink: #161615;
+  --muted: #77746d;
+  --grid: #e4e3dc;
+  --border: rgba(22,22,21,.12);
+  --blue: #2a78d6;
+  --blue-soft: rgba(42,120,214,.14);
+  --orange: #e86a32;
+  --good: #0b8a4b;
+  --critical: #cf3d3d;
+  --board: #efeee9;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+}
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--grid);
+}
+header h1 { margin: 0; font-size: 19px; letter-spacing: -.01em; }
+#engine { margin-left: auto; color: var(--muted); font-size: 13px; }
+#engine b { color: var(--ink); font-weight: 600; }
+main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) 340px;
+  gap: 28px;
+  align-items: start;
+}
+.board-wrap { position: relative; }
+canvas {
+  width: 100%;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--board);
+}
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 22px;
+  color: #fff;
+  background: rgba(18,18,18,.56);
+  border-radius: 8px;
+}
+.overlay small { color: rgba(255,255,255,.82); }
+.overlay[hidden] { display: none; }
+.rail {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 16px;
+}
+.controls { display: flex; flex-direction: column; gap: 10px; }
+.controls label { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 13px; }
+.controls input[type=range] { width: 100%; }
+.controls input[type=checkbox] { width: auto; }
+button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); font-weight: 600; }
+select { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+#dirs { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.dir-row { display: grid; grid-template-columns: 56px 1fr 54px; align-items: center; gap: 8px; font-size: 13px; }
+.dir-row .track { height: 8px; background: var(--grid); border-radius: 99px; overflow: hidden; }
+.dir-row .fill { display: block; height: 100%; width: 0; background: var(--blue); transition: width .12s ease; }
+.dir-row.chosen .opt { font-weight: 700; color: var(--blue); }
+.dir-row .val { text-align: right; color: var(--muted); }
+.gauges { margin-top: 14px; display: grid; gap: 8px; }
+.gauge { display: grid; grid-template-columns: 84px 1fr 48px; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.gauge .track { height: 8px; background: var(--grid); border-radius: 99px; overflow: hidden; }
+.gauge .fill { display: block; height: 100%; width: 0; background: var(--orange); }
+.gauge .gval { text-align: right; color: var(--ink); }
+.stats { margin-top: 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { border: 1px solid var(--border); border-radius: 6px; padding: 8px; min-height: 58px; }
+.stat .label { color: var(--muted); font-size: 12px; }
+.stat .value { margin-top: 2px; font-size: 17px; font-weight: 650; }
+.note { margin-top: 12px; min-height: 42px; color: var(--muted); font-size: 13px; }
+.note .flag { color: var(--critical); font-weight: 700; }
+.error { margin-top: 12px; color: var(--critical); font-size: 13px; white-space: pre-wrap; }
+@media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Laya 贪吃蛇</h1>
+  <span id="engine">正在连接服务端…</span>
+</header>
+<main>
+  <div class="board-wrap">
+    <canvas id="board" width="960" height="640"></canvas>
+    <div class="overlay" id="overlay">
+      <b id="overlay-title">每一步都是一次 Laya 决策</b>
+      <small id="overlay-sub">点击「新开一局」开始。CPU 较慢，NPU 约 40ms/步。</small>
+    </div>
+  </div>
+  <aside class="rail">
+    <div class="controls">
+      <button class="primary" id="new">新开一局</button>
+      <button id="toggle" disabled>暂停</button>
+      <label>速度 <input id="speed" type="range" min="1" max="11" value="6"></label>
+      <label><input id="guarded" type="checkbox" checked> 安全护栏</label>
+      <label>提示词
+        <select id="prompt">
+          <option value="compact" selected>compact</option>
+          <option value="detailed">detailed</option>
+        </select>
+      </label>
+    </div>
+    <div id="dirs"></div>
+    <div class="gauges">
+      <div class="gauge"><span>死路风险</span><div class="track"><div class="fill" id="g-risk"></div></div><span class="gval" id="g-risk-v">–</span></div>
+      <div class="gauge"><span>食物可达</span><div class="track"><div class="fill" id="g-food"></div></div><span class="gval" id="g-food-v">–</span></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="label">得分</div><div class="value" id="s-score">0</div></div>
+      <div class="stat"><div class="label">步数</div><div class="value" id="s-moves">0</div></div>
+      <div class="stat"><div class="label">护栏干预</div><div class="value" id="s-int">0</div></div>
+      <div class="stat"><div class="label">单步推理</div><div class="value" id="s-inf">–</div></div>
+      <div class="stat"><div class="label">实际速度</div><div class="value" id="s-mps">–</div></div>
+      <div class="stat"><div class="label">蛇身长度</div><div class="value" id="s-len">–</div></div>
+    </div>
+    <div class="note" id="note">模型对四个方向给出概率，护栏只在提议不安全时纠正。</div>
+    <div class="error" id="error" hidden></div>
+  </aside>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const DIRS = ["UP", "DOWN", "LEFT", "RIGHT"];
+const LABEL = { UP: "↑ 上", DOWN: "↓ 下", LEFT: "← 左", RIGHT: "→ 右" };
+const state = { session: null, playing: false, gen: 0, lastTick: 0 };
+
+function pct(v) { return (v * 100).toFixed(1) + "%"; }
+function showError(msg) { const el = $("error"); el.textContent = msg; el.hidden = false; }
+function hideError() { $("error").hidden = true; }
+
+async function api(path, body) {
+  const opts = body === undefined
+    ? { method: "GET" }
+    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const res = await fetch(path, opts);
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+  return data;
+}
+
+function initDirs() {
+  const box = $("dirs");
+  box.innerHTML = "";
+  for (const d of DIRS) {
+    const row = document.createElement("div");
+    row.className = "dir-row";
+    row.id = "dir-" + d;
+    row.innerHTML = `<span class="opt">${LABEL[d]}</span>
+      <span class="track"><span class="fill"></span></span>
+      <span class="val">–</span>`;
+    box.appendChild(row);
+  }
+}
+
+function updateDirs(decision) {
+  for (const d of DIRS) {
+    const row = $("dir-" + d);
+    const p = decision ? (decision.probabilities[d] || 0) : 0;
+    row.classList.toggle("chosen", !!decision && decision.executed === d);
+    row.querySelector(".fill").style.width = (p * 100).toFixed(2) + "%";
+    row.querySelector(".val").textContent = decision ? pct(p) : "–";
+  }
+  const note = $("note");
+  if (!decision) {
+    note.textContent = "模型对四个方向给出概率，护栏只在提议不安全时纠正。";
+  } else if (decision.intervened) {
+    note.innerHTML = `<span class="flag">护栏干预</span>：模型提议 ${LABEL[decision.proposed]}，改走 ${LABEL[decision.executed]}`;
+  } else {
+    note.textContent = `模型提议 ${LABEL[decision.proposed]}，与安全集一致。`;
+  }
+  $("g-risk").style.width = decision ? (decision.dead_end_risk * 100).toFixed(1) + "%" : "0";
+  $("g-risk-v").textContent = decision ? pct(decision.dead_end_risk) : "–";
+  $("g-food").style.width = decision ? (decision.food_reachable * 100).toFixed(1) + "%" : "0";
+  $("g-food-v").textContent = decision ? pct(decision.food_reachable) : "–";
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill(); return; }
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); ctx.fill();
+}
+
+function drawBoard(snap) {
+  const canvas = $("board");
+  const ctx = canvas.getContext("2d");
+  const cw = canvas.width / snap.width;
+  const ch = canvas.height / snap.height;
+  ctx.fillStyle = "#efeee9";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = "#e4e3dc";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = 1; x < snap.width; x++) { ctx.moveTo(x * cw, 0); ctx.lineTo(x * cw, canvas.height); }
+  for (let y = 1; y < snap.height; y++) { ctx.moveTo(0, y * ch); ctx.lineTo(canvas.width, y * ch); }
+  ctx.stroke();
+  const pad = Math.max(1.5, cw * 0.08);
+  snap.body.forEach(([x, y], i) => {
+    ctx.fillStyle = i === 0 ? "#145db3" : "#2a78d6";
+    ctx.globalAlpha = i === 0 ? 1 : Math.max(0.35, 0.85 - (i / snap.body.length) * 0.5);
+    roundRect(ctx, x * cw + pad, y * ch + pad, cw - 2 * pad, ch - 2 * pad, 4);
+  });
+  ctx.globalAlpha = 1;
+  if (snap.food) {
+    ctx.fillStyle = "#e86a32";
+    ctx.beginPath();
+    ctx.arc((snap.food[0] + 0.5) * cw, (snap.food[1] + 0.5) * ch, Math.min(cw, ch) * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function updateStats(snap, stats, decision) {
+  $("s-score").textContent = snap.score;
+  $("s-moves").textContent = stats ? stats.moves : 0;
+  $("s-int").textContent = stats ? stats.interventions : 0;
+  $("s-len").textContent = snap.length;
+  if (decision) $("s-inf").textContent = decision.inference_ms.toFixed(0) + " ms";
+  if (state.lastTick) {
+    const dt = (performance.now() - state.lastTick) / 1000;
+    if (dt > 0) $("s-mps").textContent = (1 / dt).toFixed(1) + " 步/s";
+  }
+}
+
+async function newGame() {
+  hideError();
+  $("new").disabled = true;
+  $("new").textContent = "加载中…";
+  try {
+    const data = await api("/api/snake/new", {
+      guarded: $("guarded").checked,
+      prompt: $("prompt").value,
+    });
+    state.session = data.session;
+    state.playing = true;
+    state.gen += 1;
+    state.lastTick = 0;
+    $("overlay").hidden = true;
+    $("toggle").disabled = false;
+    $("toggle").textContent = "暂停";
+    initDirs();
+    updateDirs(null);
+    drawBoard(data.state);
+    updateStats(data.state, null, null);
+    loop(state.gen);
+  } catch (err) {
+    showError(err.message);
+    $("overlay").hidden = false;
+  } finally {
+    $("new").disabled = false;
+    $("new").textContent = "新开一局";
+  }
+}
+
+async function loop(gen) {
+  const s = state;
+  if (!s.session || s.gen !== gen || !s.playing) return;
+  const speed = Number($("speed").value);
+  const target = speed >= 11 ? 0 : 1000 / speed;
+  const started = performance.now();
+  let data;
+  try {
+    data = await api("/api/snake/step", { session: s.session });
+  } catch (err) {
+    showError(err.message);
+    s.playing = false;
+    $("toggle").disabled = true;
+    return;
+  }
+  if (s.gen !== gen) return;
+  if (data.decision) updateDirs(data.decision);
+  drawBoard(data.state);
+  updateStats(data.state, data.stats, data.decision);
+  s.lastTick = started;
+  if (data.done) {
+    s.playing = false;
+    $("toggle").disabled = true;
+    const title = $("overlay-title"), sub = $("overlay-sub");
+    if (data.state.won) {
+      title.textContent = "填满棋盘，获胜";
+      sub.textContent = "得分 " + data.state.score;
+    } else {
+      const reason = { wall: "撞墙", body: "撞到蛇身", reverse: "反向移动" }[data.state.death_reason] || data.state.death_reason;
+      title.textContent = "本局结束：" + reason;
+      sub.textContent = "得分 " + data.state.score + "，共 " + data.state.ticks + " 步。";
+    }
+    $("overlay").hidden = false;
+    return;
+  }
+  const elapsed = performance.now() - started;
+  setTimeout(() => loop(gen), Math.max(0, target - elapsed));
+}
+
+function toggle() {
+  if (!state.session) return;
+  state.playing = !state.playing;
+  $("toggle").textContent = state.playing ? "暂停" : "继续";
+  if (state.playing) loop(state.gen);
+}
+
+$("new").onclick = newGame;
+$("toggle").onclick = toggle;
+initDirs();
+
+api("/api/info").then((info) => {
+  $("engine").innerHTML = `模型 <b>${info.model}</b> · 设备 <b>${info.device}</b>`;
+}).catch((err) => {
+  $("engine").textContent = "服务端未就绪：" + err.message;
+});
+</script>
+</body>
+</html>

@@ -47,3 +47,6 @@ credentials.json
 *-local-command-*.txt
 models/*
 !models/download.sh
+
+# reference checkout used while porting the Snake example
+laya-axera/
