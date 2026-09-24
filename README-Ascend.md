@@ -2,6 +2,8 @@
 
 在 Ascend 910B1 + CANN 9.0.0 环境中安装依赖并运行 Laya 文本决策推理。
 
+需要 ONNX → OM 离线推理（包括 310P）时，参见 [AISBench 适配指南](README-AISBench.md)：覆盖三个 checkpoint、自动路由、精度/性能检查以及 Snake/Tetris。
+
 ## 环境版本
 
 | 组件 | 版本 |

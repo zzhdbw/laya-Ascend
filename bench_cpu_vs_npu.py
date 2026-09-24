@@ -189,16 +189,17 @@ def summarize(times_ms, tokens):
     }
 
 
-def benchmark_model(name, device, device_label, warmup, runs):
-    from laya import Agent
+def benchmark_model(name, device, device_label, warmup, runs, om_root=None, aisbench_device=0):
+    from laya import Agent, AisBenchAgent
 
     case = CASES[name]
-    path = str(MODEL_PATHS[name])
+    path = str(Path(om_root) / name) if om_root is not None else str(MODEL_PATHS[name])
     state, label = case["state"], case["label"]
 
-    print("[bench] loading %s on %s ..." % (name, device), file=sys.stderr, flush=True)
+    print("[bench] loading %s on %s ..." % (name, device_label), file=sys.stderr, flush=True)
     t0 = time.perf_counter()
-    agent = Agent(path, device=str(device))
+    agent = (AisBenchAgent(path, device=aisbench_device) if om_root is not None
+             else Agent(path, device=str(device)))
     load_s = time.perf_counter() - t0
     print("[bench] loaded %s in %.1fs" % (name, load_s), file=sys.stderr, flush=True)
 
@@ -223,13 +224,19 @@ def benchmark_model(name, device, device_label, warmup, runs):
     summary["case"] = label
     summary["load_seconds"] = round(load_s, 3)
     summary["device_label"] = device_label
+    summary["runtime_device"] = str(agent.device)
+    if om_root is not None:
+        summary["om_shape"] = {"batch_size": agent.batch_size, "seq_len": agent.seq_len,
+                               "max_options": agent.max_options}
     summary["raw_latency_ms"] = [round(x, 3) for x in times_ms]
     print(
         "[bench] %s on %s: median %.1f ms, mean %.1f ms, p95 %.1f ms"
-        % (name, device, summary["latency_ms"]["median"], summary["latency_ms"]["mean"], summary["latency_ms"]["p95"]),
+        % (name, agent.device, summary["latency_ms"]["median"], summary["latency_ms"]["mean"], summary["latency_ms"]["p95"]),
         file=sys.stderr,
         flush=True,
     )
+    if om_root is not None:
+        agent.close()
     del agent
     gc.collect()
     if device.type == "npu":
@@ -239,13 +246,15 @@ def benchmark_model(name, device, device_label, warmup, runs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--device", choices=["cpu", "npu", "both"], default="both")
+    parser.add_argument("--device", choices=["cpu", "npu", "aisbench", "both"], default="both")
     parser.add_argument("--models", nargs="+", choices=list(MODEL_PATHS), default=list(MODEL_PATHS))
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--runs", type=int, default=30)
     parser.add_argument("--cpu-threads", type=int, default=1,
                         help="torch CPU threads for the CPU pass (default: 1; this VM is fastest at 1)")
     parser.add_argument("--npu-device", default=os.environ.get("LAYA_NPU_DEVICE", "npu:0"))
+    parser.add_argument("--om-root", type=Path, default=ROOT / "models" / "aisbench")
+    parser.add_argument("--aisbench-device", type=int, default=int(os.environ.get("LAYA_AISBENCH_DEVICE", "0")))
     parser.add_argument("--output", default=None, help="write full JSON report to this path")
     args = parser.parse_args()
 
@@ -289,6 +298,16 @@ def main():
             key = "npu/" + name
             report["results"][key] = benchmark_model(
                 name, npu_device, "NPU (%s)" % report["meta"]["npu_name"], args.warmup, args.runs
+            )
+
+    if args.device == "aisbench":
+        report["meta"]["aisbench_device"] = args.aisbench_device
+        report["meta"]["om_root"] = str(args.om_root)
+        for name in args.models:
+            # InferSession.infer returns host arrays: execution and D2H are synchronous.
+            report["results"]["aisbench/" + name] = benchmark_model(
+                name, torch.device("cpu"), "AISBench device %d" % args.aisbench_device,
+                args.warmup, args.runs, om_root=args.om_root, aisbench_device=args.aisbench_device,
             )
 
     if args.output:

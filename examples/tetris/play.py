@@ -31,6 +31,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default=str(DEFAULT_MODEL), help="path to one Laya checkpoint")
     parser.add_argument("--device", default="auto", help="auto, cpu, npu:0, npu:1 ...")
+    parser.add_argument("--backend", choices=["torch", "aisbench"], default="torch",
+                        help="AISBench requires --model pointing to an exported OM bundle")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--pieces", type=int, default=20)
     parser.add_argument("--delay", type=float, default=0.05)
@@ -38,7 +40,7 @@ def main():
     args = parser.parse_args()
 
     game = TetrisGame(seed=args.seed)
-    agent = load_agent(args.model, args.device)
+    agent = load_agent(args.model, args.device, args.backend)
     policy = LayaTetrisPolicy(agent, guarded=not args.no_guard)
 
     placed = 0

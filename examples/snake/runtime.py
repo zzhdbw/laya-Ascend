@@ -40,9 +40,9 @@ def choose_device(requested="auto"):
     return requested
 
 
-def load_agent(model=None, device="auto"):
-    """Load one upstream Laya Agent for the Snake demo."""
-    from laya import Agent
+def load_agent(model=None, device="auto", backend="torch"):
+    """Load a torch checkpoint or an exported AISBench bundle for the demo."""
+    from laya import load
 
     model_path = Path(model or os.environ.get("LAYA_SNAKE_MODEL") or DEFAULT_MODEL).expanduser()
     if not model_path.exists():
@@ -50,9 +50,12 @@ def load_agent(model=None, device="auto"):
             "Model directory not found: %s\n"
             "Download the checkpoints first, or pass --model /path/to/checkpoint." % model_path
         )
-    device = choose_device(device)
+    if backend == "aisbench":
+        device = os.environ.get("LAYA_AISBENCH_DEVICE", "0") if device == "auto" else device
+    else:
+        device = choose_device(device)
     print("[snake] loading %s ..." % model_path, file=sys.stderr, flush=True)
-    agent = Agent(str(model_path), device=device)
+    agent = load(str(model_path), device=device, backend=backend)
     print("[snake] loaded on %s" % agent.device, file=sys.stderr, flush=True)
 
     # Warm up the first forward pass so the first browser move is not slowed down

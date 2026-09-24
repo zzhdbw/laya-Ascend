@@ -150,13 +150,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default=str(DEFAULT_MODEL), help="path to one Laya checkpoint")
     parser.add_argument("--device", default="auto", help="auto, cpu, npu:0, npu:1 ...")
+    parser.add_argument("--backend", choices=["torch", "aisbench"], default="torch",
+                        help="AISBench requires --model pointing to an exported OM bundle")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8010)
     parser.add_argument("--width", type=int, default=24)
     parser.add_argument("--height", type=int, default=16)
     args = parser.parse_args()
 
-    agent = load_agent(args.model, args.device)
+    agent = load_agent(args.model, args.device, args.backend)
     Handler.app = SnakeApp(agent, width=args.width, height=args.height)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print("Snake demo: http://%s:%d" % (args.host, args.port), flush=True)

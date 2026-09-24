@@ -1,0 +1,67 @@
+{
+  "device_id": 7,
+  "atol": 0.02,
+  "models": {
+    "english": {
+      "mixed": {
+        "max_abs_error": 0.0022,
+        "same_choices": true,
+        "same_usage": true,
+        "passed": true
+      },
+      "single-option": {
+        "max_abs_error": 0.0,
+        "same_choices": true,
+        "same_usage": true,
+        "passed": true
+      },
+      "multibatch": {
+        "max_abs_error": 0.0002,
+        "same_choices": true,
+        "same_usage": true,
+        "passed": true
+      }
+    },
+    "multilingual": {
+      "mixed": {
+        "max_abs_error": 0.0002,
+        "same_choices": true,
+        "same_usage": true,
+        "passed": true
+      },
+      "single-option": {
+        "max_abs_error": 0.0,
+        "same_choices": true,
+        "same_usage": true,
+        "passed": true
+      },
+      "multibatch": {
+        "max_abs_error": 0.0,
+        "same_choices": true,
+        "same_usage": true,
+        "passed": true
+      }
+    },
+    "typed-decisions": {
+      "mixed": {
+        "max_abs_error": 0.0005,
+        "same_choices": true,
+        "same_usage": true,
+        "passed": true
+      },
+      "single-option": {
+        "max_abs_error": 0.0,
+        "same_choices": true,
+        "same_usage": true,
+        "passed": true
+      },
+      "multibatch": {
+        "max_abs_error": 0.0005,
+        "same_choices": true,
+        "same_usage": true,
+        "passed": true
+      }
+    }
+  },
+  "passed": true
+}
