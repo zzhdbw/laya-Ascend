@@ -37,6 +37,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default=str(DEFAULT_MODEL), help="path to one Laya checkpoint")
     parser.add_argument("--device", default="auto", help="auto, cpu, npu:0, npu:1 ...")
+    parser.add_argument("--backend", choices=["torch", "aisbench"], default="torch",
+                        help="AISBench requires --model pointing to an exported OM bundle")
     parser.add_argument("--width", type=int, default=24)
     parser.add_argument("--height", type=int, default=16)
     parser.add_argument("--seed", type=int, default=7)
@@ -47,7 +49,7 @@ def main():
     args = parser.parse_args()
 
     game = SnakeGame(width=args.width, height=args.height, seed=args.seed)
-    agent = load_agent(args.model, args.device)
+    agent = load_agent(args.model, args.device, args.backend)
     policy = LayaPolicy(agent, guarded=not args.no_guard, prompt=args.prompt)
 
     for _ in range(max(0, args.steps)):

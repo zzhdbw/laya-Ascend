@@ -201,23 +201,7 @@ class Agent:
         except Exception:
             pass
 
-        # Keep what the checkpoint shipped for inspection, but only ever apply clamped values:
-        # some buckets are fitted to sharpen rather than soften (see clamp_temperature).
-        self.temperature_raw = self.cfg.get("temperature", [1.0, 1.0, 1.0])
-        self.temperature_by_options_raw = self.cfg.get("temperature_by_options", {})
-        self.temperature = [clamp_temperature(t) for t in self.temperature_raw]
-        self.temperature_by_options = {k: clamp_temperature(v)
-                                       for k, v in self.temperature_by_options_raw.items()}
-        rejected = ["%s=%.4g" % (k, float(v)) for k, v in self.temperature_by_options_raw.items()
-                    if clamp_temperature(v) != float(v)]
-        rejected += ["temperature[%d]=%.4g" % (i, float(t)) for i, t in enumerate(self.temperature_raw)
-                     if clamp_temperature(t) != float(t)]
-        if rejected:
-            warnings.warn(
-                "laya: this checkpoint ships temperatures outside [%g, %g] which would distort "
-                "confidence; clamping %s. Treat confidence from the affected buckets as uncalibrated."
-                % (TEMP_MIN, TEMP_MAX, ", ".join(rejected)),
-                RuntimeWarning, stacklevel=2)
+        self._init_temperatures()
         self.dtype = amp_dtype(self.cfg.get("amp_dtype", "fp16"))
 
         if self.device.type == "cuda" and torch.cuda.get_device_capability(self.device)[0] < 8:
@@ -250,6 +234,50 @@ class Agent:
                 "    pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128\n"
                 "  See https://pytorch.org/get-started/locally/\n"
                 % (fell_back_from, fell_back_why), flush=True)
+
+    def _init_temperatures(self):
+        # Share checkpoint calibration across torch and offline inference backends.
+        self.temperature_raw = self.cfg.get("temperature", [1.0, 1.0, 1.0])
+        self.temperature_by_options_raw = self.cfg.get("temperature_by_options", {})
+        self.temperature = [clamp_temperature(t) for t in self.temperature_raw]
+        self.temperature_by_options = {k: clamp_temperature(v)
+                                       for k, v in self.temperature_by_options_raw.items()}
+        rejected = ["%s=%.4g" % (k, float(v)) for k, v in self.temperature_by_options_raw.items()
+                    if clamp_temperature(v) != float(v)]
+        rejected += ["temperature[%d]=%.4g" % (i, float(t)) for i, t in enumerate(self.temperature_raw)
+                     if clamp_temperature(t) != float(t)]
+        if rejected:
+            warnings.warn(
+                "laya: this checkpoint ships temperatures outside [%g, %g] which would distort "
+                "confidence; clamping %s. Treat confidence from the affected buckets as uncalibrated."
+                % (TEMP_MIN, TEMP_MAX, ", ".join(rejected)),
+                RuntimeWarning, stacklevel=2)
+
+    def _forward_batch(self, b):
+        use_amp = self.device.type == "cuda"
+        try:
+            with torch.autocast(device_type=self.device.type, dtype=self.dtype, enabled=use_amp):
+                return self.model(
+                    b["input_ids"].to(self.device),
+                    b["attention_mask"].to(self.device),
+                    b["marker_pos"].to(self.device),
+                    b["marker_mask"].to(self.device),
+                    b["qtype"].to(self.device),
+                )
+        except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
+            if self.device.type != "cpu" and ("memory" in str(e).lower() or "cuda" in str(e).lower()):
+                print("Warning: GPU memory exceeded during inference. Falling back to CPU...")
+                self.device = torch.device("cpu")
+                self.dtype = torch.float32
+                self.model.to(self.device)
+                return self.model(
+                    b["input_ids"].to(self.device),
+                    b["attention_mask"].to(self.device),
+                    b["marker_pos"].to(self.device),
+                    b["marker_mask"].to(self.device),
+                    b["qtype"].to(self.device),
+                )
+            raise
 
     @staticmethod
     def _to_internal(qdef: Dict) -> Dict:
@@ -288,33 +316,11 @@ class Agent:
                 raise ValueError("question %r options exceed head_max_len=%d" % (qid, head_max_len))
             items.append({"ids": seq, "markers": markers, "qtype": QTYPES[q["t"]]})
 
+        if not items:
+            return {"model": "laya-rl-agent", "answers": {},
+                    "usage": {"input_tokens": 0, "output_tokens": 0}}
         b = collate_items([items], self.tok.pad_token_id)
-        use_amp = self.device.type == "cuda"
-
-        try:
-            with torch.autocast(device_type=self.device.type, dtype=self.dtype, enabled=use_amp):
-                logits, act = self.model(
-                    b["input_ids"].to(self.device),
-                    b["attention_mask"].to(self.device),
-                    b["marker_pos"].to(self.device),
-                    b["marker_mask"].to(self.device),
-                    b["qtype"].to(self.device),
-                )
-        except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
-            if self.device.type != "cpu" and ("memory" in str(e).lower() or "cuda" in str(e).lower()):
-                print("Warning: GPU memory exceeded during inference. Falling back to CPU...")
-                self.device = torch.device("cpu")
-                self.dtype = torch.float32
-                self.model.to(self.device)
-                logits, act = self.model(
-                    b["input_ids"].to(self.device),
-                    b["attention_mask"].to(self.device),
-                    b["marker_pos"].to(self.device),
-                    b["marker_mask"].to(self.device),
-                    b["qtype"].to(self.device),
-                )
-            else:
-                raise e
+        logits, act = self._forward_batch(b)
 
         logits = logits.float().cpu().numpy()
         act = torch.softmax(act.float(), -1).cpu().numpy()
@@ -374,12 +380,22 @@ RLAgent = Agent
 
 
 def load(model_id_or_path: str = "convaiinnovations/laya", device: Optional[str] = None,
-         token: Optional[str] = None, subfolder: Optional[str] = None) -> Agent:
+         token: Optional[str] = None, subfolder: Optional[str] = None,
+         backend: str = "torch") -> Agent:
     """Load a Laya agent.
+
+    `backend="aisbench"` loads a local export bundle instead of torch weights;
+    `device` then selects an ACL device index (e.g. "npu:7"). See README-AISBench.md.
 
     `subfolder` picks one checkpoint out of a repo that bundles several:
 
         laya.load("convaiinnovations/laya")                           # English (repo root)
         laya.load("convaiinnovations/laya", subfolder="multilingual")
     """
+    if backend == "aisbench":
+        from .aisbench import AisBenchAgent
+        path = os.path.join(model_id_or_path, subfolder) if subfolder else model_id_or_path
+        return AisBenchAgent(path, device=device)
+    if backend != "torch":
+        raise ValueError("backend must be 'torch' or 'aisbench'")
     return Agent(model_id_or_path, device=device, token=token, subfolder=subfolder)

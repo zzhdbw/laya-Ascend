@@ -130,6 +130,9 @@ class Router:
         r.predict({"message": "I was charged twice"}, questions)                 # -> english
         r.predict(state, questions, model="typed-decisions")                     # explicit
 
+    For offline Ascend inference, use `backend="aisbench"` and map `models` to local
+    exported bundle directories. All sessions use the explicitly selected `device`.
+
     Models are downloaded and built on first use. `max_loaded` caps how many stay resident
     (least-recently-used is evicted), because all three together are ~1.16B parameters.
 
@@ -152,7 +155,11 @@ class Router:
         auto_task_detection: bool = False,
         standalone_repos: bool = False,
         preload: bool = False,
+        backend: str = "torch",
     ):
+        if backend not in ("torch", "aisbench"):
+            raise ValueError("backend must be 'torch' or 'aisbench'")
+        self.backend = backend
         self.models = dict(STANDALONE_MODELS if standalone_repos else DEFAULT_MODELS)
         if models:
             self.models.update({normalise_name(k): v for k, v in models.items()})
@@ -182,9 +189,9 @@ class Router:
             if key in self._agents:
                 self._touch(key)
                 return self._agents[key]
-            from .agent import Agent
+            from .agent import load
             repo, sub = _split(self.models[key])
-            agent = Agent(repo, device=self.device, token=self.token, subfolder=sub)
+            agent = load(repo, device=self.device, token=self.token, subfolder=sub, backend=self.backend)
             self._agents[key] = agent
             self._order.append(key)
             self._evict()

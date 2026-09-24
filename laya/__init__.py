@@ -1,6 +1,7 @@
 """Laya: Fast, non-autoregressive System 1 decision engine with calibrated probabilities."""
 
 from .agent import Agent, RLAgent, load
+from .aisbench import AisBenchAgent
 from .common import (
     QTYPES,
     QTYPE_NAMES,
@@ -26,6 +27,7 @@ from .shortlist import embed_fn_from_agent, predict_shortlist, shortlist_choice
 __version__ = "0.3.5"
 __all__ = [
     "Agent",
+    "AisBenchAgent",
     "RLAgent",
     "load",
     "Router",

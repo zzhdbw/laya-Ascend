@@ -48,5 +48,11 @@ credentials.json
 models/*
 !models/download.sh
 
+# Local AISBench builds, caches and task logs
+.work/
+*.om
+*.onnx
+*.onnx.data
+
 # reference checkout used while porting the Snake example
 laya-axera/

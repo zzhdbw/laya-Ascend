@@ -33,7 +33,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip build twine
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e .
+          pip install -e '.[aisbench-export]'
 
       - name: Tests must pass before anything is published
         run: |
@@ -43,6 +43,8 @@ jobs:
           python tests/test_download.py
           python tests/test_shortlist.py
           python tests/test_decision_model.py
+          python tests/test_aisbench.py
+          python tests/test_aisbench_export.py
           python tests/test_packaging.py
 
       - name: Build
